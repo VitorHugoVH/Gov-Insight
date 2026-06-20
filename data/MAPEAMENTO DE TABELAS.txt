@@ -1,0 +1,90 @@
+TABELA DE CONTRATOS => 
+
+chave primária: numero_do_contrato (36)
+chave estrangeira: rel_empresas ( EMPRESA DE PESQUISA AGROPECUARIA E EXTENSAO RURAL DE SANTA CATARINA /  83.052.191/****-**)
+chave estrangeira: rel_entidade (PREFEITURA MUNICIPAL DE BALNEARIO GAIVOTA)
+
+TABELA DE CONVENIOS =>
+
+chave primária: numero_do_convenio_recebido
+chave estrangeira: rel_entidade (PREFEITURA MUNICIPAL DE BALNEARIO GAIVOTA)
+chave estrangeira: rel_orgao ( SECRETARIA DE ESTADO DE INFRAESTRUTURA E MOBILIDADE (SIE))
+
+TABELA DE DESPESAS COM PESSOAL =>
+
+chave primária: numero empenho
+chave estrangeira: rel_orgao (CAMARA MUNICIPAL DE VEREADORES)
+chave estrangeira: rel_fornecedor (INSS-INSTITUTO NACIONAL DO SEGURO SOCIAL)
+
+TABELA DE DESPESAS PROGRAMAS ACOES =>
+
+chave primária: código_da_despesa (108)
+chave estrangeira: rel_entidade (PREFEITURA MUNICIPAL DE BALNEARIO GAIVOTA)
+
+TABELA DE EMENDAS PARLAMENTARES =>
+
+chave primária: numero_do_empenho
+chave estrangeira: rel_empresas
+
+TABELA DE DIARIAS =>
+
+chave primária: numero
+chave estrangeira: rel_entidade (PREFEITURA MUNICIPAL DE BALNEARIO GAIVOTA)
+chave estrangeira: rel_servidor
+
+TABELA DE SERVIDOR =>
+
+chave primária: matricula
+atributo: nome servidor
+chave estrangeira: rel_entidade (PREFEITURA MUNICIPAL DE BALNEARIO GAIVOTA)
+chave estrangeira: rel_orgao (CAMARA MUNICIPAL DE VEREADORES)
+atributo: cargo
+atributo: salario
+
+TABELA DE ENTIDADES =>
+
+chave primária: nome entidade
+
+TABELA DE ORGÃO =>
+
+chave primária: nome entidade
+
+TABELA DE LICITAÇÕES =>
+
+Chave Candidata:
+chave primária: numero processo
+chave primária: numero licitação
+
+N PROCESSO    N LICITAÇÃO
+
+21		17
+22		17
+21  (NÃO PODE)	17 
+
+TABELA DE OBRAS =>
+
+chave primária: id_obra
+chave estrangeira: rel_entidade (PREFEITURA MUNICIPAL DE BALNEARIO GAIVOTA)
+
+TABELA DE PATRIMONIO =>
+
+chave primária: identificacao
+chave estrangeira: rel_entidade (CAMARA MUNICIPAL DE BALNEARIO GAIVOTA)
+chave estrangeira: rel_orgao (CAMARA MUNICIPAL DE VEREADORES)
+
+TABELA DE RECEITAS ORÇAMENTARIAS =>
+
+chave primária: id_receita
+chave estrangeira: rel_orgao
+
+
+
+
+
+
+
+
+
+
+
+
