@@ -1,93 +1,214 @@
-# gov_insight/src/analytics.py
+import os
 import plotext as plt
 from tabulate import tabulate
 from db import get_connection
 
+
+# ==============================================================================
+# FUNÇÕES AUXILIARES
+# ==============================================================================
+
+def executar_consulta_real(query):
+    conn = None
+    cur = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(query)
+        resultado = cur.fetchall()
+        return resultado
+    except Exception as e:
+        raise e
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
+
 def formatar_real(valor):
-    """Formata número para padrão de moeda R$"""
+    if valor is None:
+        return "R$ 0,00"
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-def executar_e_plotar_maiores_gastos_individuais():
-    """Busca as 5 maiores despesas individuais"""
-    conn = get_connection()
-    cur = conn.cursor()
-    query = "SELECT id, LEFT(COALESCE(descricao, 'Despesa Geral'), 30), valor_pago FROM despesa WHERE valor_pago > 0 ORDER BY valor_pago DESC LIMIT 5;"
-    cur.execute(query)
-    dados = cur.fetchall()
-    
-    if dados:
-        print("\n📊 REPORT 1: TOP 5 MAIORES DESPESAS")
-        # Exibe formatado em tabela
-        tab_dados = [[r[0], r[1], formatar_real(r[2])] for r in dados]
-        print(tabulate(tab_dados, headers=["ID", "Descrição", "Valor"], tablefmt="fancy_grid"))
-        
-        plt.clear_data()
-        plt.bar([f"ID {r[0]}" for r in dados], [float(r[2]) for r in dados], color="indigo")
-        plt.title("Maiores Gastos Individuais")
-        plt.show()
-    cur.close()
-    conn.close()
 
-def executar_e_plotar_salarios_por_cargo():
-    """Analisa a média salarial por cargo, tratando valores nulos"""
-    conn = get_connection()
-    cur = conn.cursor()
-    # Adicionamos COALESCE para garantir que nulos virem 0
+def abreviar_orgao(nome):
+    """Abrevia nomes de órgãos para exibição no gráfico."""
+    substituicoes = {
+        "CÂMARA MUNICIPAL DE BALNEÁRIO GAIVOTA":            "CÂMARA MUNICIPAL",
+        "PREFEITURA MUNICIPAL BALNEÁRIO GAIVOTA":           "PREFEITURA",
+        "FUNDO MUNICIPAL DE SAÚDE BALNEÁRIO GAIVOTA":      "FMS SAÚDE",
+        "GABINETE DO PREFEITO MUNICIPAL":                   "GAB. PREFEITO",
+        "SECRETARIA DE EDUCAÇÃO":                           "SEC. EDUCAÇÃO",
+        "SECRETARIA MEIO AMBIENTE E DESENV. ECON. SUSTENT.":"SEC. MEIO AMBIENTE",
+        "SECRETARIA DE ADMINISTRAÇÃO E FINANÇAS":           "SEC. ADM. FINANÇAS",
+        "SECRETARIA DE SAÚDE":                              "SEC. SAÚDE",
+        "SECRETARIA DE OBRAS":                              "SEC. OBRAS",
+        "SECRETARIA DE ASSISTÊNCIA SOCIAL":                 "SEC. ASSIST. SOCIAL",
+    }
+    return substituicoes.get(nome, nome[:20] if nome else "")
+
+
+def exibir_grafico_com_legenda(labels, valores, titulo, cor, formatar_fn=None):
+    """Exibe gráfico de barras com legenda numerada abaixo."""
+    plt.clear_data()
+    plt.plotsize(110, 30)
+
+    # Usa números como labels no eixo X para evitar sobreposição
+    numeros = [str(i) for i in range(1, len(labels) + 1)]
+    plt.bar(numeros, valores, color=cor)
+    plt.title(titulo)
+    plt.show()
+
+    # Legenda manual com nomes completos e valores
+    print("\nLegenda:")
+    for i, (label, valor) in enumerate(zip(labels, valores), 1):
+        valor_fmt = formatar_fn(valor) if formatar_fn else str(valor)
+        print(f"  {i}. {label:<45} {valor_fmt}")
+    print()
+
+
+# ==============================================================================
+# [1] RELATÓRIO 1: TOTAL DE DIÁRIAS POR ÓRGÃO
+# ==============================================================================
+
+def relatorio_diarias_por_orgao():
+    print("\n⚡ Executando Consulta 1: Gastos com Diárias (Agregação: SUM)...")
+
     query = """
-        SELECT cargo, AVG(COALESCE(remuneracao, 0)) as media 
-        FROM servidor 
-        GROUP BY cargo 
-        HAVING AVG(COALESCE(remuneracao, 0)) > 0
-        ORDER BY media DESC LIMIT 5;
+        SELECT
+            COALESCE(s.nome_orgao, d.nome_entidade) AS local,
+            SUM(d.valor_unitario * d.quantidade)    AS total
+        FROM gov.diarias d
+        LEFT JOIN gov.servidores s ON d.matricula = s.matricula
+        LEFT JOIN gov.orgao o      ON s.nome_orgao = o.nome_orgao
+        WHERE d.valor_unitario > 0
+        GROUP BY COALESCE(s.nome_orgao, d.nome_entidade)
+        ORDER BY total DESC
+        LIMIT 5;
     """
-    cur.execute(query)
-    dados = cur.fetchall()
-    
-    if dados:
-        print("\n💰 REPORT 2: MÉDIA SALARIAL POR CARGO (TOP 5)")
-        # Garantimos que r[1] seja tratado como float antes de formatar
-        tab_dados = [[r[0][:20], formatar_real(float(r[1] or 0))] for r in dados]
-        print(tabulate(tab_dados, headers=["Cargo", "Média Salarial"], tablefmt="fancy_grid"))
-        
-        plt.clear_data()
-        plt.bar([r[0][:10] for r in dados], [float(r[1] or 0) for r in dados], color="green")
-        plt.title("Média Salarial por Cargo")
-        plt.show()
-    else:
-        print("\n💰 MÉDIA SALARIAL: Sem dados válidos para processar.")
-    
-    cur.close()
-    conn.close()
 
-def executar_e_plotar_gastos_por_orgao():
-    """Agrega o total gasto por órgão"""
-    conn = get_connection()
-    cur = conn.cursor()
+    try:
+        dados = executar_consulta_real(query)
+        if not dados:
+            print("\n⚠️ Sem registros de diárias no banco.")
+            return
+
+        print("\n💰 REPORT 1: MAIORES GASTOS COM DIÁRIAS POR ÓRGÃO")
+        tab = [[r[0], formatar_real(r[1])] for r in dados]
+        print(tabulate(tab, headers=["Órgão/Lotação", "Total em Diárias"], tablefmt="fancy_grid"))
+
+        labels = [abreviar_orgao(r[0]) for r in dados]
+        valores = [float(r[1]) for r in dados]
+        exibir_grafico_com_legenda(labels, valores, "Total em Diárias por Órgão", "indigo", formatar_real)
+
+    except Exception as e:
+        print(f"\n❌ Erro ao executar consulta 1: {e}")
+
+
+# ==============================================================================
+# [2] RELATÓRIO 2: MÉDIA DE CONTRATOS POR ENTIDADE
+# ==============================================================================
+
+def relatorio_media_contratos_obras():
+    print("\n⚡ Executando Consulta 2: Média de Contratos por Entidade...")
+
     query = """
-        SELECT o.nome, SUM(d.valor_pago) as total
-        FROM despesa d
-        JOIN orgao o ON d.orgao_id = o.id
-        GROUP BY o.nome
-        HAVING SUM(d.valor_pago) > 0
-        ORDER BY total DESC LIMIT 5;
+        SELECT
+            nome_entidade,
+            AVG(valor_final) AS media,
+            COUNT(*)         AS qtd
+        FROM gov.contratos
+        WHERE valor_final > 0
+          AND nome_entidade IS NOT NULL
+        GROUP BY nome_entidade
+        ORDER BY media DESC
+        LIMIT 5;
     """
-    cur.execute(query)
-    dados = cur.fetchall()
-    
-    if dados:
-        print("\n📊 REPORT 3: GASTOS POR ÓRGÃO (TOP 5)")
-        tab_dados = [[r[0][:20], formatar_real(r[1])] for r in dados]
-        print(tabulate(tab_dados, headers=["Órgão", "Total Pago"], tablefmt="fancy_grid"))
-        
-        plt.clear_data()
-        plt.bar([r[0][:10] for r in dados], [float(r[1]) for r in dados], color="blue")
-        plt.title("Maiores Gastos por Órgão")
-        plt.show()
-    cur.close()
-    conn.close()
 
-def executar_e_plotar_maiores_gastos():
-    """Função mestre que executa os relatórios"""
-    executar_e_plotar_maiores_gastos_individuais()
-    executar_e_plotar_salarios_por_cargo()
-    executar_e_plotar_gastos_por_orgao()
+    try:
+        dados = executar_consulta_real(query)
+        if not dados:
+            print("\n⚠️ Sem registros de contratos no banco.")
+            return
+
+        print("\n🏗️ REPORT 2: MÉDIA DOS VALORES DE CONTRATOS POR ENTIDADE")
+        tab = [[r[0], formatar_real(r[1]), r[2]] for r in dados]
+        print(tabulate(tab, headers=["Entidade", "Média do Valor", "Qtd Contratos"], tablefmt="fancy_grid"))
+
+        labels = [abreviar_orgao(r[0]) for r in dados]
+        valores = [float(r[1]) for r in dados]
+        exibir_grafico_com_legenda(labels, valores, "Média de Valor de Contrato por Entidade", "green", formatar_real)
+
+    except Exception as e:
+        print(f"\n❌ Erro ao executar consulta 2: {e}")
+
+
+# ==============================================================================
+# [3] RELATÓRIO 3: VOLUME DE LICITAÇÕES POR ENTIDADE
+# ==============================================================================
+
+def relatorio_volume_licitacoes_orgao():
+    print("\n⚡ Executando Consulta 3: Volume de Licitações por Entidade...")
+
+    query = """
+        SELECT
+            nome_entidade,
+            COUNT(DISTINCT numero_do_processo) AS total_licitacoes
+        FROM gov.licitacoes
+        WHERE nome_entidade IS NOT NULL
+        GROUP BY nome_entidade
+        ORDER BY total_licitacoes DESC
+        LIMIT 5;
+    """
+
+    try:
+        dados = executar_consulta_real(query)
+        if not dados:
+            print("\n⚠️ Sem registros de licitações no banco.")
+            return
+
+        print("\n📦 REPORT 3: QUANTIDADE DE LICITAÇÕES POR ENTIDADE")
+        tab = [[r[0], r[1]] for r in dados]
+        print(tabulate(tab, headers=["Entidade", "Qtd Licitações"], tablefmt="fancy_grid"))
+
+        labels = [abreviar_orgao(r[0]) for r in dados]
+        valores = [int(r[1]) for r in dados]
+        exibir_grafico_com_legenda(labels, valores, "Quantidade de Licitações por Entidade", "blue")
+
+    except Exception as e:
+        print(f"\n❌ Erro ao executar consulta 3: {e}")
+
+
+# ==============================================================================
+# MENU
+# ==============================================================================
+
+def exibir_submenu_relatorios():
+    while True:
+        print("\n" + "=" * 50)
+        print("📊 SUBMENU - RELATÓRIOS E ANÁLISES GRÁFICAS")
+        print("=" * 50)
+        print("[1] 💰 Relatório 1: Total de Diárias por Órgão")
+        print("[2] 🏗️  Relatório 2: Média de Contratos por Entidade")
+        print("[3] 📦 Relatório 3: Volume de Licitações por Entidade")
+        print("[0] ⬅️  Voltar ao Menu Principal")
+        print("=" * 50)
+
+        opcao = input("Escolha um relatório para visualizar: ").strip()
+
+        if opcao == "1":
+            relatorio_diarias_por_orgao()
+        elif opcao == "2":
+            relatorio_media_contratos_obras()
+        elif opcao == "3":
+            relatorio_volume_licitacoes_orgao()
+        elif opcao == "0":
+            print("\n⬅️ Retornando ao Menu Principal...")
+            break
+        else:
+            print("\n⚠️ Opção inválida! Escolha entre 0 e 3.")
+
+
+if __name__ == "__main__":
+    exibir_submenu_relatorios()
